@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Varuna AI | Real-Time Flood Risk Early Warning & Evacuation System</title>
+  <meta name="description" content="Varuna AI: AI-Powered 5-Output Real-Time Flood Risk Early Warning & Dynamic Evacuation Routing System using Google Maps, MOSDAC Satellite, Radar, NWP, and GIS Infrastructure.">
+  
+  <!-- Google Fonts: Outfit & Fira Code -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet GIS CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  
+  <!-- Google Maps JavaScript API with user's key -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=places"></script>
+
+  <!-- Dashboard Styling -->
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+
+<div class="app-container">
+  <!-- Header Bar -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+      </div>
+      <div>
+        <h1 class="brand-title">Varuna AI</h1>
+        <div class="brand-subtitle">Real-Time 5-Output Early Warning & Evacuation System</div>
+      </div>
+    </div>
+
+    <div class="header-controls">
+      <div class="pill-badge live" id="live-indicator">LIVE TELEMETRY ACTIVE</div>
+      
+      <!-- Basemap Switcher -->
+      <div class="select-wrapper">
+        <select id="basemap-selector" title="Choose Basemap Imagery Layer">
+          <option value="google_hybrid" selected>🛰️ Google Satellite + Roads</option>
+          <option value="google_satellite">🌍 Google Pure Satellite</option>
+          <option value="google_terrain">🏔️ Google Terrain & Elevation</option>
+          <option value="google_roadmap">🗺️ Google Standard Roadmap</option>
+          <option value="carto_dark">🌑 Carto Dark Matter</option>
+        </select>
+      </div>
+
+      <div class="select-wrapper">
+        <select id="region-selector" title="Select Geographic Domain">
+          <option value="chennai_basin">Adyar & Cooum River Delta (Chennai Basin)</option>
+          <option value="assam_brahmaputra">Brahmaputra Valley & Kaziranga Floodplain (Assam)</option>
+        </select>
+      </div>
+
+      <button class="btn" id="btn-mosdac-config" title="MOSDAC config.json Settings">
+        <span>🛰️ MOSDAC Config</span>
+      </button>
+
+      <button class="btn" id="btn-backtest" title="Phase 5 Validation & Backtesting Report">
+        <span>📊 Validation & Backtest</span>
+      </button>
+
+      <button class="btn btn-danger" id="btn-broadcast-alert" title="Dispatch NDMA / SDMA Alerts">
+        <span>📢 Broadcast Alert</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="main-workspace">
+    <!-- Left Sidebar: Controls, KPIs & Layers -->
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <div class="section-title">
+          <span>Simulation Horizon & Intensity</span>
+        </div>
+
+        <div class="timeline-box">
+          <div class="timeline-header">
+            <span>Forecast Lead Time</span>
+            <span id="lead-time-tag" style="color: var(--accent-cyan); font-weight: bold;">Nowcast T+60m</span>
+          </div>
+          <div class="timeline-buttons">
+            <button class="time-btn" data-time="t30m">30m</button>
+            <button class="time-btn active" data-time="t60m">60m</button>
+            <button class="time-btn" data-time="t90m">90m</button>
+            <button class="time-btn" data-time="t120m">120m</button>
+            <button class="time-btn" data-time="t24h">24h</button>
+            <button class="time-btn" data-time="t72h">72h</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.78rem; margin-bottom: 6px;">
+            <span>Storm Surge Severity Multiplier</span>
+            <span id="severity-val" style="color: var(--accent-cyan); font-weight: bold;">1.0x</span>
+          </div>
+          <input type="range" id="severity-slider" min="0.5" max="2.2" step="0.1" value="1.0" style="width: 100%; accent-color: var(--accent-cyan); cursor: pointer;">
+        </div>
+
+        <button class="btn btn-primary" id="btn-run-sim" style="width: 100%; justify-content: center;">
+          <span>⚡ Run Prediction Cycle</span>
+        </button>
+      </div>
+
+      <!-- Real-Time KPIs -->
+      <div class="sidebar-section">
+        <div class="section-title">
+          <span>Current Impact Summary</span>
+          <span id="kpi-exec-time" style="font-size: 0.7rem; color: var(--accent-emerald);">-- ms</span>
+        </div>
+        
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Peak Rain [Out 1]</div>
+            <div class="kpi-value" id="kpi-rain">--<span class="kpi-unit">mm/h</span></div>
+            <span class="kpi-badge" id="kpi-rain-cat" style="background: rgba(239, 68, 68, 0.2); color: #f87171;">--</span>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-label">Flooded Area [Out 2]</div>
+            <div class="kpi-value" id="kpi-flooded-area">--<span class="kpi-unit">km²</span></div>
+            <span class="kpi-badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24;">SAR Extent</span>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-label">Max Depth [Out 3]</div>
+            <div class="kpi-value" id="kpi-max-depth">--<span class="kpi-unit">cm</span></div>
+            <span class="kpi-badge" style="background: rgba(236, 72, 153, 0.2); color: #f472b6;">Depression</span>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-label">Closed Roads [Out 4]</div>
+            <div class="kpi-value" id="kpi-blocked-roads">--<span class="kpi-unit">links</span></div>
+            <span class="kpi-badge" style="background: rgba(239, 68, 68, 0.2); color: #ef4444;">>30cm Block</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" style="margin-bottom: 0;">
+          <div class="kpi-label">Total At-Risk Evacuees [Out 5]</div>
+          <div class="kpi-value" id="kpi-evac-count" style="color: var(--accent-cyan);">--</div>
+        </div>
+      </div>
+
+      <!-- Layer Visibility Toggles -->
+      <div class="sidebar-section">
+        <div class="section-title">
+          <span>GIS Overlay Layers</span>
+        </div>
+        <div class="layer-toggle-list">
+          <div class="layer-toggle-item">
+            <div class="layer-info">
+              <span class="layer-indicator" style="background: #0284c7;"></span>
+              <span class="layer-name">Rainfall Radar/Satellite Heatmap</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" class="layer-checkbox" data-layer="rainfall" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="layer-toggle-item">
+            <div class="layer-info">
+              <span class="layer-indicator" style="background: #f97316;"></span>
+              <span class="layer-name">Water Depth 2D Raster (<30cm to >1m)</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" class="layer-checkbox" data-layer="waterDepth" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="layer-toggle-item">
+            <div class="layer-info">
+              <span class="layer-indicator" style="background: #ef4444;"></span>
+              <span class="layer-name">Road Status (Open/Restricted/Closed)</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" class="layer-checkbox" data-layer="roads" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="layer-toggle-item">
+            <div class="layer-info">
+              <span class="layer-indicator" style="background: #34d399;"></span>
+              <span class="layer-name">Evacuation Routes & Rescue Flags</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" class="layer-checkbox" data-layer="evacRoutes" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="layer-toggle-item">
+            <div class="layer-info">
+              <span class="layer-indicator" style="background: #38bdf8;"></span>
+              <span class="layer-name">Relief Shelters & Capacities</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" class="layer-checkbox" data-layer="shelters" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center: Interactive GIS Map with Google Maps Basemap -->
+    <section class="map-container-wrapper">
+      <div id="gis-map"></div>
+
+      <!-- Floating Map Status Pill -->
+      <div class="map-status-pill">
+        <span style="color: var(--accent-cyan);">🌍 Google Maps & Satellite Enabled</span>
+        <span style="color: var(--border-glass);">|</span>
+        <span id="inspect-info-card" style="color: var(--text-primary);">Click anywhere on map to inspect elevation & flood depth</span>
+      </div>
+
+      <!-- Floating Legend -->
+      <div class="map-floating-legend">
+        <div class="legend-title">Water Depth / Road Status Legend</div>
+        <div class="legend-scale"></div>
+        <div class="legend-labels">
+          <span>< 15cm (Passable)</span>
+          <span>15-30cm (Restricted)</span>
+          <span>> 30cm (Closed)</span>
+        </div>
+        <div style="margin-top: 8px; font-size: 0.68rem; color: var(--text-secondary); display: flex; justify-content: space-between;">
+          <span>🟢 Open Route</span>
+          <span>🚨 Air/Boat Rescue Required</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Sidebar: 5 Output Product Inspector -->
+    <aside class="sidebar sidebar-right">
+      <div class="output-tab-bar">
+        <button class="output-tab-btn active" data-tab="evacuation">Out 5: Evac & Rescue</button>
+        <button class="output-tab-btn" data-tab="roads">Out 4: Roads</button>
+        <button class="output-tab-btn" data-tab="hydrology">Out 1-3: Hydro</button>
+        <button class="output-tab-btn" data-tab="models">Model Cards</button>
+      </div>
+
+      <!-- Pane 1: Output 5 Evacuation & Rescue Priority -->
+      <div class="output-content-pane active" id="pane-evacuation">
+        <div class="section-title">
+          <span>Ranked Evacuation Zones (by Risk)</span>
+          <span style="font-size: 0.7rem; color: var(--accent-cyan);">Auto Boat/Air Fallback</span>
+        </div>
+        <div class="zone-list" id="evacuation-zones-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Pane 2: Output 4 Road Network Accessibility -->
+      <div class="output-content-pane" id="pane-roads">
+        <div class="section-title">
+          <span>Road Network Clearance Status</span>
+          <span style="font-size: 0.7rem; color: var(--text-muted);">Threshold: 15cm / 30cm</span>
+        </div>
+        <div class="zone-list" id="road-accessibility-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Pane 3: Output 1-3 Hydrometeorology & Depth -->
+      <div class="output-content-pane" id="pane-hydrology">
+        <div class="section-title">
+          <span>Output 1: Spatio-Temporal Nowcast</span>
+        </div>
+        <div id="lead-time-chart-container" style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 8px; margin-bottom: 16px;"></div>
+
+        <div class="section-title">
+          <span>Output 3: Water Depth Distribution</span>
+        </div>
+        <div id="depth-dist-chart-container" style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 8px;"></div>
+      </div>
+
+      <!-- Pane 4: AI/ML Model Cards -->
+      <div class="output-content-pane" id="pane-models">
+        <div class="section-title">
+          <span>System Architecture & Model Cards</span>
+        </div>
+        <div id="model-cards-container">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<!-- Modal: MOSDAC Config -->
+<div class="modal-backdrop" id="modal-mosdac">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h3 style="font-size: 1.1rem; color: var(--accent-cyan);">🛰️ ISRO MOSDAC Integration (config.json)</h3>
+      <button class="modal-close">&times;</button>
+    </div>
+    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px;" id="mosdac-status-text">
+      Checking MOSDAC connection status...
+    </div>
+    
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+      <div>
+        <label style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">MOSDAC Username / Email</label>
+        <input type="text" id="mosdac-user-input" style="width: 100%; background: #1f2937; border: 1px solid var(--border-glass); padding: 8px 12px; color: #fff; border-radius: 6px; margin-top: 4px;">
+      </div>
+      <div>
+        <label style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Target Dataset ID (INSAT-3DR / Rain)</label>
+        <input type="text" id="mosdac-dataset-input" style="width: 100%; background: #1f2937; border: 1px solid var(--border-glass); padding: 8px 12px; color: #fff; border-radius: 6px; margin-top: 4px;">
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div>
+          <label style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Start Date</label>
+          <input type="date" id="mosdac-start-input" style="width: 100%; background: #1f2937; border: 1px solid var(--border-glass); padding: 8px 12px; color: #fff; border-radius: 6px; margin-top: 4px;">
+        </div>
+        <div>
+          <label style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">End Date</label>
+          <input type="date" id="mosdac-end-input" style="width: 100%; background: #1f2937; border: 1px solid var(--border-glass); padding: 8px 12px; color: #fff; border-radius: 6px; margin-top: 4px;">
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 10px;">
+      <button class="btn modal-close">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-mosdac">Save & Apply to config.json</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Backtesting & Validation -->
+<div class="modal-backdrop" id="modal-backtest">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h3 style="font-size: 1.1rem; color: var(--accent-emerald);">📊 Phase 5: Validation & Backtesting Benchmark</h3>
+      <button class="modal-close">&times;</button>
+    </div>
+    <p style="font-size: 0.82rem; color: var(--text-secondary);">
+      Quantitative cross-validation against historical benchmark events (Chennai 2015 / Assam 2022) using Sentinel-1 SAR observations, IMD gauges, and ground truth road logs.
+    </p>
+
+    <table class="metrics-table">
+      <thead>
+        <tr>
+          <th>Output Pipeline Module</th>
+          <th>Validation Target</th>
+          <th>Evaluation Metric</th>
+          <th>Gate Status</th>
+        </tr>
+      </thead>
+      <tbody id="backtest-table-body">
+        <!-- Populated by JS -->
+      </tbody>
+    </table>
+
+    <div style="margin-top: 16px; padding: 12px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; font-size: 0.85rem; color: #34d399;" id="backtest-verdict">
+      Status: Running Benchmark...
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Emergency Broadcast Alert -->
+<div class="modal-backdrop" id="modal-alert">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h3 style="font-size: 1.1rem; color: var(--accent-rose);">📢 Emergency Public Alert Dispatcher</h3>
+      <button class="modal-close">&times;</button>
+    </div>
+    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 14px;">
+      Simulates NDMA Common Alerting Protocol (CAP) and SMS Cell Broadcast to citizen mobile devices across impacted wards.
+    </div>
+
+    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px; font-size: 0.82rem; margin-bottom: 16px;">
+      <strong style="color: #f87171;">⚠️ PREVIEW CITIZEN ALERT MESSAGE:</strong><br>
+      "EMERGENCY FLASH FLOOD ALERT (SDMA/NDMA): Severe inundation predicted in your ward. Water depth exceeding 30cm on arterial links. Follow green evacuation routes to designated relief camps immediately. Avoid flooded bridges."
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 10px;">
+      <button class="btn modal-close">Cancel</button>
+      <button class="btn btn-danger" id="btn-confirm-broadcast">Broadcast Urgent Alert Now</button>
+    </div>
+  </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<!-- App Scripts -->
+<script src="/static/js/gis_map.js"></script>
+<script src="/static/js/charts.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
